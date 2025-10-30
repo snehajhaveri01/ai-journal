@@ -1,139 +1,111 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { auth, db } from "@/lib/firebase/client";
-import {
-  Timestamp,
-  addDoc,
-  collection,
-  getCountFromServer,
-  query,
-  where,
-} from "firebase/firestore";
-import Paywall from "./Paywall";
+import React, { useState } from "react";
+import { auth } from "@/lib/firebase/client"; // your client initializer exports `auth`
 
 type Props = {
-  isPro: boolean;
+  onSaved?: () => Promise<void> | void; // optional: refresh the list after save
 };
 
-export default function EntryComposer({ isPro }: Props) {
+export default function EntryComposer({ onSaved }: Props) {
   const [text, setText] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [todayCount, setTodayCount] = useState(0);
-  const [showPaywall, setShowPaywall] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastResult, setLastResult] = useState<{
+    summary: string;
+    mood: string;
+  } | null>(null);
 
-  const todayStart = useMemo(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
-  }, []);
+  const handleSubmit = async () => {
+    if (loading) return;
+    setError(null);
+    setLastResult(null);
 
-  useEffect(() => {
-    // Count today's entries to enforce free limit
-    (async () => {
-      const u = auth.currentUser;
-      if (!u) return;
-      const q = query(
-        collection(db, "entries"),
-        where("uid", "==", u.uid),
-        where("createdAt", ">=", Timestamp.fromDate(todayStart))
-      );
-      const snap = await getCountFromServer(q);
-      setTodayCount(snap.data().count);
-    })();
-  }, [todayStart]);
-
-  async function createEntry() {
-    const user = auth.currentUser;
-    if (!user) return alert("Please sign in first.");
-    if (!isPro && todayCount >= 3) {
-      setShowPaywall(true);
+    if (!text.trim()) {
+      setError("Write something first 🙂");
       return;
     }
-    const idToken = await user.getIdToken();
+
+    const user = auth.currentUser;
+    if (!user) {
+      setError("Please sign in first to save your entry.");
+      return;
+    }
 
     try {
-      setSaving(true);
+      setLoading(true);
+
+      const token = await user.getIdToken(true);
+
       const res = await fetch("/api/entries", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ text }),
       });
-      const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.error || "Failed");
 
-      // Optimistic local write for snappy UI (server also writes)
-      await addDoc(collection(db, "entries"), {
-        uid: user.uid,
-        text,
-        summary: data.entry?.summary ?? "",
-        moodScore: data.entry?.moodScore ?? 0,
-        moodLabel: data.entry?.moodLabel ?? "neutral",
-        topics: data.entry?.topics ?? [],
-        createdAt: Timestamp.fromDate(new Date()),
-      });
+      // Always try to read JSON if possible; if not, fall back to text.
+      let data: any = null;
+      const raw = await res.text();
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        // server unexpectedly returned non-JSON; surface it
+        throw new Error(raw || `Request failed with ${res.status}`);
+      }
 
-      setText("");
-      setTodayCount((c) => c + 1);
+      if (!res.ok) {
+        throw new Error(data?.error || `Request failed with ${res.status}`);
+      }
+
+      setLastResult({ summary: data.summary, mood: data.mood });
+      setText(""); // clear the editor
+
+      if (onSaved) await onSaved();
     } catch (e: any) {
-      alert(e.message || "Error");
+      setError(e?.message ?? "Something went wrong.");
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
-  }
-
-  function startDictation() {
-    const w = window as any;
-    const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!SR) return alert("Speech Recognition not supported in this browser.");
-    const rec = new SR();
-    rec.lang = "en-US";
-    rec.onresult = (e: any) => {
-      const t = e.results?.[0]?.[0]?.transcript ?? "";
-      setText((prev) => (prev ? prev + " " + t : t));
-    };
-    rec.start();
-  }
+  };
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">
-          {isPro
-            ? "Pro: unlimited entries"
-            : `Free: ${Math.max(0, 3 - todayCount)} entries left today`}
-        </p>
-        <button
-          type="button"
-          onClick={startDictation}
-          className="text-sm underline"
-          title="Dictate your entry"
-        >
-          🎙️ Dictate
-        </button>
-      </div>
+      <label className="block text-lg font-semibold">Journal</label>
 
       <textarea
-        className="w-full min-h-40 border rounded-2xl p-3"
-        placeholder="What’s on your mind today?"
         value={text}
         onChange={(e) => setText(e.target.value)}
+        placeholder="Write about your day…"
+        rows={6}
+        className="w-full rounded-xl bg-zinc-900/60 border border-zinc-800 outline-none p-4 text-sm md:text-base
+                   focus:border-zinc-500 transition-colors"
       />
 
-      <div className="flex gap-2">
+      <div className="flex items-center gap-3">
         <button
-          onClick={createEntry}
-          disabled={saving || !text.trim()}
-          className="px-4 py-2 rounded-xl bg-black text-white disabled:opacity-60"
+          onClick={handleSubmit}
+          disabled={loading}
+          className="px-4 py-2 rounded-lg bg-white text-black font-medium disabled:opacity-60"
         >
-          {saving ? "Summarizing…" : "Save & summarize"}
+          {loading ? "Summarizing…" : "Save & Summarize"}
         </button>
+
+        {error && <span className="text-sm text-red-400">{error}</span>}
       </div>
 
-      {showPaywall && <Paywall onClose={() => setShowPaywall(false)} />}
+      {lastResult && (
+        <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+          <div className="text-sm text-zinc-400">AI Summary</div>
+          <div className="mt-1 text-zinc-100">{lastResult.summary}</div>
+          <div className="mt-2 text-xs text-zinc-400">
+            Mood: {lastResult.mood}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

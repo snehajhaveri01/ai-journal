@@ -1,46 +1,67 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// app/api/entries/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase/admin";
-import { openai } from "@/lib/openai";
+import { summarizeEntryAndDetectMood } from "@/lib/openai";
 
 export async function POST(req: NextRequest) {
   try {
-    const idToken = req.headers.get("Authorization")?.replace("Bearer ", "");
-    if (!idToken)
-      return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+    // ---- Auth: Bearer <ID_TOKEN> from Firebase client ----
+    const auth = req.headers.get("authorization") || "";
+    const m = auth.match(/^Bearer\s+(.+)$/i);
+    if (!m) {
+      return NextResponse.json(
+        { error: "Missing Authorization Bearer token" },
+        { status: 401 }
+      );
+    }
 
-    const { uid } = await adminAuth.verifyIdToken(idToken);
+    let decoded;
+    try {
+      decoded = await adminAuth.verifyIdToken(m[1]);
+    } catch (e: any) {
+      return NextResponse.json(
+        {
+          error:
+            "Decoding Firebase ID token failed. Pass the full JWT from Firebase Auth. " +
+            "See https://firebase.google.com/docs/auth/admin/verify-id-tokens",
+          details: e?.message ?? String(e),
+        },
+        { status: 401 }
+      );
+    }
 
+    // ---- body ----
     const { text } = await req.json();
-    if (!text || text.length < 5)
-      return NextResponse.json({ error: "empty" }, { status: 400 });
+    if (!text || typeof text !== "string") {
+      return NextResponse.json(
+        { error: "Missing 'text' string" },
+        { status: 400 }
+      );
+    }
 
-    // call OpenAI once for summary + mood
-    const prompt = `You are a journaling assistant. 
-Summarize the entry in 2 sentences. Then output a JSON with: 
-{ "summary": "...", "moodScore": -1..1, "moodLabel": "very negative|negative|neutral|positive|very positive", "topics": ["..."] }.
-Entry: """${text}"""`;
+    // ---- AI summary + mood ----
+    const { summary, mood } = await summarizeEntryAndDetectMood(text);
 
-    const resp = await openai.responses.create({
-      model: "gpt-4o-mini",
-      input: prompt,
-    });
+    // ---- Store in Firestore ----
+    const uid = decoded.uid;
+    const docRef = await adminDb
+      .collection("users")
+      .doc(uid)
+      .collection("entries")
+      .add({
+        text,
+        summary,
+        mood,
+        createdAt: Date.now(),
+      });
 
-    const raw = resp.output_text ?? "{}";
-    const parsed = JSON.parse(raw);
-
-    const doc = {
-      uid,
-      text,
-      summary: parsed.summary ?? "",
-      moodScore: Number(parsed.moodScore ?? 0),
-      moodLabel: parsed.moodLabel ?? "neutral",
-      topics: Array.isArray(parsed.topics) ? parsed.topics.slice(0, 5) : [],
-      createdAt: new Date(),
-    };
-
-    await adminDb.collection("entries").add(doc);
-    return NextResponse.json({ ok: true, entry: doc });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message ?? "error" }, { status: 500 });
+    return NextResponse.json({ id: docRef.id, summary, mood }, { status: 200 });
+  } catch (err: any) {
+    // always JSON (prevents "Unexpected token <" on client)
+    return NextResponse.json(
+      { error: "Internal error", details: err?.message ?? String(err) },
+      { status: 500 }
+    );
   }
 }
