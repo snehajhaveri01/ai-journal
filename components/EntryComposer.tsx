@@ -1,111 +1,115 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+// components/EntryComposer.tsx
 "use client";
 
-import React, { useState } from "react";
-import { auth } from "@/lib/firebase/client"; // your client initializer exports `auth`
+import { useEffect, useState } from "react";
+import {
+  onAuthStateChanged,
+  signInWithPopup,
+  GoogleAuthProvider,
+} from "firebase/auth";
+import { auth } from "@/lib/firebase/client";
 
-type Props = {
-  onSaved?: () => Promise<void> | void; // optional: refresh the list after save
-};
-
-export default function EntryComposer({ onSaved }: Props) {
+export default function EntryComposer() {
+  const [user, setUser] = useState<import("firebase/auth").User | null>(null);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [lastResult, setLastResult] = useState<{
-    summary: string;
-    mood: string;
-  } | null>(null);
 
-  const handleSubmit = async () => {
-    if (loading) return;
-    setError(null);
-    setLastResult(null);
+  // Watch Firebase auth state
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      console.log("👤 Auth state:", u ? u.email : "signed out");
+    });
+    return () => unsub();
+  }, []);
 
-    if (!text.trim()) {
-      setError("Write something first 🙂");
-      return;
-    }
-
-    const user = auth.currentUser;
-    if (!user) {
-      setError("Please sign in first to save your entry.");
-      return;
-    }
-
+  async function handleSignIn() {
     try {
-      setLoading(true);
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (err) {
+      console.error("Sign-in failed:", err);
+      alert("Google sign-in failed.");
+    }
+  }
 
-      const token = await user.getIdToken(true);
+  async function handleSubmit() {
+    if (!user) {
+      alert("Please sign in first.");
+      return;
+    }
+    if (!text.trim()) return;
+
+    setLoading(true);
+    try {
+      // Get fresh Firebase ID token
+      const idToken = await user.getIdToken(true);
+      console.log(
+        "📨 Sending token:",
+        idToken ? idToken.slice(0, 30) + "..." : "NO TOKEN"
+      );
+
+      if (!idToken) throw new Error("Could not get Firebase ID token.");
 
       const res = await fetch("/api/entries", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({ text }),
       });
 
-      // Always try to read JSON if possible; if not, fall back to text.
-      let data: any = null;
-      const raw = await res.text();
-      try {
-        data = raw ? JSON.parse(raw) : {};
-      } catch {
-        // server unexpectedly returned non-JSON; surface it
-        throw new Error(raw || `Request failed with ${res.status}`);
-      }
+      const contentType = res.headers.get("content-type");
+      const data = contentType?.includes("application/json")
+        ? await res.json()
+        : await res.text();
 
       if (!res.ok) {
-        throw new Error(data?.error || `Request failed with ${res.status}`);
+        console.error("❌ API error:", data);
+        alert(`Error ${res.status}: ${data?.error || data}`);
+        return;
       }
 
-      setLastResult({ summary: data.summary, mood: data.mood });
-      setText(""); // clear the editor
-
-      if (onSaved) await onSaved();
-    } catch (e: any) {
-      setError(e?.message ?? "Something went wrong.");
+      console.log("✅ Entry saved:", data);
+      setText("");
+      alert(`Summary: ${data.summary}\nMood: ${data.mood}`);
+    } catch (err: any) {
+      console.error("Submit failed:", err);
+      alert(err?.message || "Something went wrong.");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   return (
-    <div className="space-y-3">
-      <label className="block text-lg font-semibold">Journal</label>
+    <div className="space-y-4">
+      {!user ? (
+        <button
+          className="px-4 py-2 rounded bg-white/10"
+          onClick={handleSignIn}
+        >
+          Sign in with Google
+        </button>
+      ) : (
+        <div className="text-sm opacity-80">Signed in as {user.email}</div>
+      )}
 
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder="Write about your day…"
-        rows={6}
-        className="w-full rounded-xl bg-zinc-900/60 border border-zinc-800 outline-none p-4 text-sm md:text-base
-                   focus:border-zinc-500 transition-colors"
+        className="w-full h-40 rounded bg-black/30 p-3"
+        placeholder="Write your thoughts…"
       />
 
-      <div className="flex items-center gap-3">
-        <button
-          onClick={handleSubmit}
-          disabled={loading}
-          className="px-4 py-2 rounded-lg bg-white text-black font-medium disabled:opacity-60"
-        >
-          {loading ? "Summarizing…" : "Save & Summarize"}
-        </button>
-
-        {error && <span className="text-sm text-red-400">{error}</span>}
-      </div>
-
-      {lastResult && (
-        <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
-          <div className="text-sm text-zinc-400">AI Summary</div>
-          <div className="mt-1 text-zinc-100">{lastResult.summary}</div>
-          <div className="mt-2 text-xs text-zinc-400">
-            Mood: {lastResult.mood}
-          </div>
-        </div>
-      )}
+      <button
+        onClick={handleSubmit}
+        disabled={loading}
+        className="px-4 py-2 rounded bg-white/10 disabled:opacity-50"
+      >
+        {loading ? "Summarizing…" : "Save & summarize"}
+      </button>
     </div>
   );
 }

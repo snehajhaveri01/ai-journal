@@ -2,66 +2,56 @@
 // app/api/entries/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase/admin";
-import { summarizeEntryAndDetectMood } from "@/lib/openai";
+import OpenAI from "openai";
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export async function POST(req: NextRequest) {
   try {
-    // ---- Auth: Bearer <ID_TOKEN> from Firebase client ----
-    const auth = req.headers.get("authorization") || "";
-    const m = auth.match(/^Bearer\s+(.+)$/i);
-    if (!m) {
+    const authHeader = req.headers.get("authorization") || "";
+    console.log("🔐 Auth header:", authHeader.slice(0, 40) + "...");
+
+    if (!authHeader.startsWith("Bearer ")) {
       return NextResponse.json(
-        { error: "Missing Authorization Bearer token" },
+        { error: "Missing Authorization: Bearer <idToken>" },
         { status: 401 }
       );
     }
 
-    let decoded;
-    try {
-      decoded = await adminAuth.verifyIdToken(m[1]);
-    } catch (e: any) {
-      return NextResponse.json(
-        {
-          error:
-            "Decoding Firebase ID token failed. Pass the full JWT from Firebase Auth. " +
-            "See https://firebase.google.com/docs/auth/admin/verify-id-tokens",
-          details: e?.message ?? String(e),
-        },
-        { status: 401 }
-      );
-    }
+    const token = authHeader.split("Bearer ")[1];
+    const decoded = await adminAuth.verifyIdToken(token);
+    console.log("✅ Firebase user verified:", decoded.uid);
 
-    // ---- body ----
     const { text } = await req.json();
-    if (!text || typeof text !== "string") {
-      return NextResponse.json(
-        { error: "Missing 'text' string" },
-        { status: 400 }
-      );
+    if (!text?.trim()) {
+      return NextResponse.json({ error: "Text is required" }, { status: 400 });
     }
 
-    // ---- AI summary + mood ----
-    const { summary, mood } = await summarizeEntryAndDetectMood(text);
+    const prompt = `Summarize this journal entry in 1-2 sentences and guess a mood (one word):\n\n${text}`;
+    const ai = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.5,
+    });
 
-    // ---- Store in Firestore ----
-    const uid = decoded.uid;
-    const docRef = await adminDb
-      .collection("users")
-      .doc(uid)
-      .collection("entries")
-      .add({
-        text,
-        summary,
-        mood,
-        createdAt: Date.now(),
-      });
+    const summary = ai.choices[0].message?.content?.trim() || "";
+    const mood =
+      /mood:\s*([a-z]+)/i.exec(summary)?.[1]?.toLowerCase() || "neutral";
 
-    return NextResponse.json({ id: docRef.id, summary, mood }, { status: 200 });
+    const docRef = await adminDb.collection("entries").add({
+      uid: decoded.uid,
+      text,
+      summary,
+      mood,
+      createdAt: new Date(),
+    });
+
+    return NextResponse.json({ id: docRef.id, summary, mood });
   } catch (err: any) {
-    // always JSON (prevents "Unexpected token <" on client)
+    console.error("❌ API error:", err);
     return NextResponse.json(
-      { error: "Internal error", details: err?.message ?? String(err) },
-      { status: 500 }
+      { error: err.message || "Unauthorized" },
+      { status: 401 }
     );
   }
 }
