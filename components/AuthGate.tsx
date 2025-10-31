@@ -3,40 +3,47 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getAuth, onAuthStateChanged } from "firebase/auth";
-import { auth as firebaseAuth } from "@/lib/firebase/client";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "@/lib/firebase/client";
 
 /**
  * AuthGate
- * - Use this in pages under /app/journal (or in journal/layout.tsx)
- * - Redirects to '/' if user is not signed in.
+ * - Use this in pages that require authentication
+ * - Redirects to /signin if user is not logged in
  */
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const [checked, setChecked] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [authenticated, setAuthenticated] = useState(false);
 
   useEffect(() => {
-    // Ensure Firebase is initialized
-    const auth = firebaseAuth ?? getAuth();
-    const unsub = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (!user) {
-        // not signed in -> redirect to home or sign-in route
-        router.replace("/");
+        setAuthenticated(false);
+        router.replace("/signin");
       } else {
-        setChecked(true);
+        setAuthenticated(true);
       }
+      setLoading(false);
     });
 
-    return () => unsub();
+    return () => unsubscribe();
   }, [router]);
 
-  // while we check auth state show nothing (or a spinner)
-  if (!checked)
+  if (loading) {
     return (
-      <div className="h-64 flex items-center justify-center">
-        Checking authentication…
+      <div className="min-h-screen grid place-items-center">
+        <div className="space-y-4 text-center">
+          <div className="w-12 h-12 border-4 border-black border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-gray-600">Loading...</p>
+        </div>
       </div>
     );
+  }
+
+  if (!authenticated) {
+    return null;
+  }
 
   return <>{children}</>;
 }

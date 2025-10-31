@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// components/EntryComposer.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -7,6 +6,8 @@ import {
   onAuthStateChanged,
   signInWithPopup,
   GoogleAuthProvider,
+  setPersistence,
+  browserLocalPersistence,
 } from "firebase/auth";
 import { auth } from "@/lib/firebase/client";
 
@@ -15,11 +16,10 @@ export default function EntryComposer() {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Watch Firebase auth state
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
+      console.log("👤 Auth state:", u?.email || "signed out");
       setUser(u);
-      console.log("👤 Auth state:", u ? u.email : "signed out");
     });
     return () => unsub();
   }, []);
@@ -27,7 +27,10 @@ export default function EntryComposer() {
   async function handleSignIn() {
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      await setPersistence(auth, browserLocalPersistence);
+      const res = await signInWithPopup(auth, provider);
+      setUser(res.user);
+      console.log("✅ Signed in as:", res.user.email);
     } catch (err) {
       console.error("Sign-in failed:", err);
       alert("Google sign-in failed.");
@@ -43,14 +46,11 @@ export default function EntryComposer() {
 
     setLoading(true);
     try {
-      // Get fresh Firebase ID token
       const idToken = await user.getIdToken(true);
       console.log(
         "📨 Sending token:",
-        idToken ? idToken.slice(0, 30) + "..." : "NO TOKEN"
+        idToken ? idToken.slice(0, 40) + "..." : "NO TOKEN"
       );
-
-      if (!idToken) throw new Error("Could not get Firebase ID token.");
 
       const res = await fetch("/api/entries", {
         method: "POST",
@@ -61,23 +61,16 @@ export default function EntryComposer() {
         body: JSON.stringify({ text }),
       });
 
-      const contentType = res.headers.get("content-type");
-      const data = contentType?.includes("application/json")
-        ? await res.json()
-        : await res.text();
-
-      if (!res.ok) {
-        console.error("❌ API error:", data);
-        alert(`Error ${res.status}: ${data?.error || data}`);
-        return;
-      }
+      const data = await res.json();
+      if (!res.ok)
+        throw new Error(data?.error || `Request failed: ${res.status}`);
 
       console.log("✅ Entry saved:", data);
       setText("");
       alert(`Summary: ${data.summary}\nMood: ${data.mood}`);
-    } catch (err: any) {
-      console.error("Submit failed:", err);
-      alert(err?.message || "Something went wrong.");
+    } catch (e: any) {
+      console.error("❌ Submission failed:", e);
+      alert(e?.message || "Something went wrong.");
     } finally {
       setLoading(false);
     }

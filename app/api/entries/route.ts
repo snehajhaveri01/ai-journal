@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// app/api/entries/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase/admin";
 import OpenAI from "openai";
@@ -13,19 +12,22 @@ export async function POST(req: NextRequest) {
 
     if (!authHeader.startsWith("Bearer ")) {
       return NextResponse.json(
-        { error: "Missing Authorization: Bearer <idToken>" },
+        { error: "Missing Authorization header" },
         { status: 401 }
       );
     }
 
-    const token = authHeader.split("Bearer ")[1];
+    const token = authHeader.split("Bearer ")[1].trim();
+    if (!token) {
+      return NextResponse.json({ error: "Empty token" }, { status: 401 });
+    }
+
     const decoded = await adminAuth.verifyIdToken(token);
     console.log("✅ Firebase user verified:", decoded.uid);
 
     const { text } = await req.json();
-    if (!text?.trim()) {
-      return NextResponse.json({ error: "Text is required" }, { status: 400 });
-    }
+    if (!text?.trim())
+      return NextResponse.json({ error: "Text required" }, { status: 400 });
 
     const prompt = `Summarize this journal entry in 1-2 sentences and guess a mood (one word):\n\n${text}`;
     const ai = await openai.chat.completions.create({
