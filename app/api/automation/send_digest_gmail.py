@@ -1,4 +1,5 @@
-import os, openai, datetime, base64
+import os, openai, datetime, base64, json
+from pathlib import Path
 from email.mime.text import MIMEText
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -12,13 +13,17 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
 
 # 🚀 Gmail login helper
 def gmail_service():
+    base_dir = Path(__file__).parent
+    token_path = base_dir / "token.json"
+    client_path = base_dir / "credentials.json"
+
     creds = None
-    if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+    if token_path.exists():
+        creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
     if not creds or not creds.valid:
-        flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
+        flow = InstalledAppFlow.from_client_secrets_file(str(client_path), SCOPES)
         creds = flow.run_local_server(port=0)
-        with open("token.json", "w") as t:
+        with open(token_path, "w") as t:
             t.write(creds.to_json())
     return build("gmail", "v1", credentials=creds)
 
@@ -31,8 +36,17 @@ def send_email(service, to, subject, body):
     service.users().messages().send(userId="me", body={"raw": raw}).execute()
 
 
-# 🔥 Firebase
-cred = credentials.Certificate("firebase-service.json")
+# 🔥 Firebase (load service account from env or fall back to ADC)
+firebase_service_json = os.getenv("FIREBASE_SERVICE_JSON")
+if firebase_service_json:
+    try:
+        service_account_info = json.loads(firebase_service_json)
+        cred = credentials.Certificate(service_account_info)
+    except Exception as e:
+        raise RuntimeError("Invalid FIREBASE_SERVICE_JSON provided") from e
+else:
+    cred = credentials.ApplicationDefault()
+
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 

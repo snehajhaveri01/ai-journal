@@ -22,19 +22,16 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Recreate sensitive files from Secrets
+      - name: Recreate OAuth files from Secrets (no service account on disk)
         run: |
           mkdir -p automation
           # Write OAuth client (credentials.json)
           echo "${GMAIL_CLIENT_JSON}" > automation/credentials.json
           # Write OAuth token (token.json) generated from your local first run
           echo "${GMAIL_TOKEN_JSON}" > automation/token.json
-          # Write Firebase Admin service account
-          echo "${FIREBASE_SERVICE_JSON}" > automation/firebase-service.json
         env:
           GMAIL_CLIENT_JSON: ${{ secrets.GMAIL_CLIENT_JSON }}
           GMAIL_TOKEN_JSON: ${{ secrets.GMAIL_TOKEN_JSON }}
-          FIREBASE_SERVICE_JSON: ${{ secrets.FIREBASE_SERVICE_JSON }}
 
       - name: Install deps
         run: |
@@ -44,5 +41,6 @@ jobs:
       - name: Run weekly digest
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          FIREBASE_SERVICE_JSON: ${{ secrets.FIREBASE_SERVICE_JSON }}
         run: |
           python automation/send_digest_gmail.py
