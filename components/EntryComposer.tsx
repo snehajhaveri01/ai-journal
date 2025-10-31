@@ -10,6 +10,7 @@ import {
   browserLocalPersistence,
 } from "firebase/auth";
 import { auth } from "@/lib/firebase/client";
+import Toast from "./Toast";
 
 export default function EntryComposer() {
   const [user, setUser] = useState<import("firebase/auth").User | null>(null);
@@ -37,9 +38,11 @@ export default function EntryComposer() {
     }
   }
 
+  const [showToast, setShowToast] = useState(false);
+
   async function handleSubmit() {
     if (!user) {
-      alert("Please sign in first.");
+      setShowToast(true);
       return;
     }
     if (!text.trim()) return;
@@ -67,10 +70,10 @@ export default function EntryComposer() {
 
       console.log("✅ Entry saved:", data);
       setText("");
-      alert(`Summary: ${data.summary}\nMood: ${data.mood}`);
+      setShowToast(true);
     } catch (e: any) {
       console.error("❌ Submission failed:", e);
-      alert(e?.message || "Something went wrong.");
+      setShowToast(true);
     } finally {
       setLoading(false);
     }
@@ -78,6 +81,13 @@ export default function EntryComposer() {
 
   return (
     <div className="space-y-4">
+      {showToast && (
+        <Toast
+          message="Entry saved successfully!"
+          onClose={() => setShowToast(false)}
+          type="success"
+        />
+      )}
       {!user ? (
         <button
           className="px-4 py-2 rounded bg-white/10"

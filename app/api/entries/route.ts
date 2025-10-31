@@ -40,7 +40,9 @@ export async function POST(req: NextRequest) {
     const mood =
       /mood:\s*([a-z]+)/i.exec(summary)?.[1]?.toLowerCase() || "neutral";
 
-    const docRef = await adminDb.collection("entries").add({
+    // Ensure the collection exists by trying to get it first
+    const entriesCollection = adminDb.collection("entries");
+    const docRef = await entriesCollection.add({
       uid: decoded.uid,
       text,
       summary,
