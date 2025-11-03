@@ -1,14 +1,10 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase/admin";
-import OpenAI from "openai";
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+import { summarizeEntryAndDetectMood } from "@/lib/openai";
 
 export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get("authorization") || "";
-    console.log("🔐 Auth header:", authHeader.slice(0, 40) + "...");
 
     if (!authHeader.startsWith("Bearer ")) {
       return NextResponse.json(
@@ -23,39 +19,39 @@ export async function POST(req: NextRequest) {
     }
 
     const decoded = await adminAuth.verifyIdToken(token);
-    console.log("✅ Firebase user verified:", decoded.uid);
 
     const { text } = await req.json();
     if (!text?.trim())
       return NextResponse.json({ error: "Text required" }, { status: 400 });
 
-    const prompt = `Summarize this journal entry in 1-2 sentences and guess a mood (one word):\n\n${text}`;
-    const ai = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.5,
-    });
+    // Use the improved OpenAI helper with mood score and topics
+    const { summary, mood, moodScore, topics } =
+      await summarizeEntryAndDetectMood(text);
 
-    const summary = ai.choices[0].message?.content?.trim() || "";
-    const mood =
-      /mood:\s*([a-z]+)/i.exec(summary)?.[1]?.toLowerCase() || "neutral";
-
-    // Ensure the collection exists by trying to get it first
+    // Save entry with all AI analysis data
     const entriesCollection = adminDb.collection("entries");
     const docRef = await entriesCollection.add({
       uid: decoded.uid,
       text,
       summary,
       mood,
+      moodLabel: mood,
+      moodScore,
+      topics,
       createdAt: new Date(),
     });
 
-    return NextResponse.json({ id: docRef.id, summary, mood });
+    return NextResponse.json({
+      id: docRef.id,
+      summary,
+      mood,
+      moodScore,
+      topics,
+    });
   } catch (err: any) {
-    console.error("❌ API error:", err);
     return NextResponse.json(
-      { error: err.message || "Unauthorized" },
-      { status: 401 }
+      { error: err.message || "Failed to create entry" },
+      { status: 500 }
     );
   }
 }

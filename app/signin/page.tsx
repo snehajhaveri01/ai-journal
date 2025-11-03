@@ -22,28 +22,9 @@ export default function SignInPage() {
   async function signInWithGoogle() {
     setLoading(true);
     try {
-      console.log("Starting Google sign-in process...");
-      console.log("Firebase config:", {
-        authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-        projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-      });
-
       const result = await signInWithPopup(auth, googleProvider);
-      console.log("Sign-in successful:", result.user.email);
       router.replace("/journal");
     } catch (error) {
-      const firebaseError = error as {
-        code?: string;
-        message: string;
-        details?: unknown;
-        customData?: unknown;
-      };
-      console.error("Detailed sign-in error:", {
-        code: firebaseError.code,
-        message: firebaseError.message,
-        details: firebaseError.details,
-        customData: firebaseError.customData,
-      });
       alert(`Sign-in failed: ${(error as Error).message}`);
     } finally {
       setLoading(false);

@@ -62,4 +62,5 @@ Thumbs.db
 *.pem
 .vscode/
 .idea/
+.claude/
 *.code-workspace

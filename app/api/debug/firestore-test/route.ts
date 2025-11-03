@@ -17,14 +17,12 @@ export async function GET() {
       id: docRef.id,
     });
   } catch (err: any) {
-    // Return detailed error info to help debugging admin init / permissions
-    console.error("[debug/firestore-test] error:", err);
     return NextResponse.json(
       {
         ok: false,
         message: err?.message ?? String(err),
         name: err?.name,
-        stack: err?.stack,
+        stack: process.env.NODE_ENV === "development" ? err?.stack : undefined,
       },
       { status: 500 }
     );

@@ -129,7 +129,6 @@ export async function POST(req: NextRequest) {
     // Unknown event, just ack.
     return NextResponse.json({ ok: true, ignored: type });
   } catch (e: any) {
-    console.error("paypal-webhook error", e);
     return NextResponse.json({ error: e.message ?? "error" }, { status: 500 });
   }
 }
