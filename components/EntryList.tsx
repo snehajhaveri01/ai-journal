@@ -15,6 +15,7 @@ import {
 import Modal from "./Modal";
 import Toast from "./Toast";
 import EmotionChart from "./EmotionChart";
+import MoodMusic from "./MoodMusic";
 import SearchFilter, { SearchFilterOptions } from "./SearchFilter";
 
 interface EmotionScores {
@@ -472,6 +473,11 @@ export default function EntryList({ onCountChange }: EntryListProps) {
 
               {/* Emotion Chart */}
               {e.emotions && <EmotionChart emotions={e.emotions} />}
+
+              {/* Mood Music */}
+              {e.moodLabel && typeof e.moodScore === "number" && (
+                <MoodMusic mood={e.moodLabel} moodScore={e.moodScore} />
+              )}
 
               {/* Entities Metadata */}
               {e.entities && (e.entities.people.length > 0 || e.entities.places.length > 0 || e.entities.events.length > 0) && (

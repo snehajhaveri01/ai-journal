@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { auth, db } from "@/lib/firebase/client";
 import { collection, query, where, orderBy, getDocs } from "firebase/firestore";
 import AuthGate from "@/components/AuthGate";
+import DetectiveInsights from "@/components/DetectiveInsights";
 import Link from "next/link";
 
 interface AnalyticsData {
@@ -235,6 +236,9 @@ export default function AnalyticsPage() {
           </div>
         ) : (
           <div className="space-y-6">
+            {/* Journal Detective */}
+            <DetectiveInsights />
+
             {/* Overview Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <StatsCard

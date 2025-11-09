@@ -1,0 +1,51 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to check if user is authenticated
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if user owns the document
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // Journal Entries
+    match /entries/{entryId} {
+      // Allow read if authenticated and user owns the entry
+      allow read: if isSignedIn() && isOwner(resource.data.uid);
+
+      // Allow create if authenticated and setting own uid
+      allow create: if isSignedIn() && isOwner(request.resource.data.uid);
+
+      // Allow update if authenticated and owns the entry
+      allow update: if isSignedIn() && isOwner(resource.data.uid);
+
+      // Allow delete if authenticated and owns the entry
+      allow delete: if isSignedIn() && isOwner(resource.data.uid);
+    }
+
+    // Goals
+    match /goals/{goalId} {
+      allow read: if isSignedIn() && isOwner(resource.data.uid);
+      allow create: if isSignedIn() && isOwner(request.resource.data.uid);
+      allow update: if isSignedIn() && isOwner(resource.data.uid);
+      allow delete: if isSignedIn() && isOwner(resource.data.uid);
+    }
+
+    // Future Self Letters
+    match /letters/{letterId} {
+      allow read: if isSignedIn() && isOwner(resource.data.uid);
+      allow create: if isSignedIn() && isOwner(request.resource.data.uid);
+      allow update: if isSignedIn() && isOwner(resource.data.uid);
+      allow delete: if isSignedIn() && isOwner(resource.data.uid);
+    }
+
+    // Deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

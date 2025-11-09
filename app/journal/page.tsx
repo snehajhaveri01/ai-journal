@@ -160,6 +160,20 @@ export default function JournalPage() {
               >
                 🎯 Goals
               </Link>
+              <Link
+                href="/letters"
+                className="text-sm text-gray-600 hover:text-gray-900 transition-colors"
+                title="Future self letters"
+              >
+                💌 Letters
+              </Link>
+              <Link
+                href="/chapters"
+                className="text-sm text-gray-600 hover:text-gray-900 transition-colors"
+                title="Life chapters"
+              >
+                📖 Chapters
+              </Link>
               <ExportButton />
               <button
                 onClick={() => auth.signOut()}

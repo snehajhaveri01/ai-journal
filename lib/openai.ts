@@ -227,3 +227,105 @@ Return only the prompt text, nothing else.`;
 
   return res.choices[0]?.message?.content?.trim() || "How are you feeling today?";
 }
+
+// Analyze patterns in journal entries
+export async function analyzePatterns(
+  entries: Array<{
+    text: string;
+    mood: string;
+    moodScore: number;
+    topics: string[];
+    categories: string[];
+    emotions: any;
+    createdAt: Date;
+  }>
+): Promise<string[]> {
+  // Prepare data summary for AI
+  const entriesByDay: Record<string, any[]> = {};
+  const entriesByTime: Record<string, any[]> = {};
+
+  entries.forEach((entry) => {
+    const dayName = entry.createdAt.toLocaleDateString("en-US", { weekday: "long" });
+    const hour = entry.createdAt.getHours();
+    const timeOfDay = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
+
+    if (!entriesByDay[dayName]) entriesByDay[dayName] = [];
+    if (!entriesByTime[timeOfDay]) entriesByTime[timeOfDay] = [];
+
+    entriesByDay[dayName].push(entry);
+    entriesByTime[timeOfDay].push(entry);
+  });
+
+  // Calculate patterns
+  const dayMoodAvgs = Object.entries(entriesByDay).map(([day, entries]) => ({
+    day,
+    avgMood: entries.reduce((sum, e) => sum + e.moodScore, 0) / entries.length,
+    count: entries.length,
+  }));
+
+  const timeMoodAvgs = Object.entries(entriesByTime).map(([time, entries]) => ({
+    time,
+    avgMood: entries.reduce((sum, e) => sum + e.moodScore, 0) / entries.length,
+    count: entries.length,
+  }));
+
+  // Topic frequency
+  const topicCounts: Record<string, number> = {};
+  entries.forEach((e) => {
+    e.topics.forEach((topic) => {
+      topicCounts[topic] = (topicCounts[topic] || 0) + 1;
+    });
+  });
+
+  const topTopics = Object.entries(topicCounts)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 5);
+
+  // Correlation between topics and mood
+  const topicMoodCorrelation = topTopics.map(([topic, count]) => {
+    const topicEntries = entries.filter((e) => e.topics.includes(topic));
+    const avgMood =
+      topicEntries.reduce((sum, e) => sum + e.moodScore, 0) / topicEntries.length;
+    return { topic, avgMood, count };
+  });
+
+  const prompt = `You are a psychological pattern analyst. Detect surprising, actionable patterns from journal data.
+
+DATA:
+${entries.length} entries, last 60 days
+
+Day patterns:
+${dayMoodAvgs.map((d) => `${d.day}: mood ${d.avgMood.toFixed(0)}/100`).join(", ")}
+
+Time patterns:
+${timeMoodAvgs.map((t) => `${t.time}: mood ${t.avgMood.toFixed(0)}/100`).join(", ")}
+
+Topics:
+${topicMoodCorrelation.map((t) => `"${t.topic}": ${t.count}x, mood ${t.avgMood.toFixed(0)}`).join(", ")}
+
+Generate 4 detective insights (under 12 words each):
+- Specific with numbers
+- Focus on correlations
+- Surprising patterns
+
+Return JSON: {"insights": ["...", "...", "...", "..."]}`;
+
+  try {
+    const res = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.4,
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+    });
+
+    const content = res.choices[0]?.message?.content?.trim() || "{}";
+    const parsed = JSON.parse(content);
+
+    if (parsed.insights && Array.isArray(parsed.insights)) {
+      return parsed.insights.slice(0, 5);
+    }
+    return ["Keep journaling to discover patterns"];
+  } catch (error) {
+    return ["Write more entries to unlock pattern detection"];
+  }
+}
