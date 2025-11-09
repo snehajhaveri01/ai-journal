@@ -24,29 +24,32 @@ export async function POST(req: NextRequest) {
     if (!text?.trim())
       return NextResponse.json({ error: "Text required" }, { status: 400 });
 
-    // Use the improved OpenAI helper with mood score and topics
-    const { summary, mood, moodScore, topics } =
-      await summarizeEntryAndDetectMood(text);
+    // Use the advanced AI analysis
+    const analysis = await summarizeEntryAndDetectMood(text);
 
-    // Save entry with all AI analysis data
+    // Save entry with comprehensive AI analysis data
     const entriesCollection = adminDb.collection("entries");
     const docRef = await entriesCollection.add({
       uid: decoded.uid,
       text,
-      summary,
-      mood,
-      moodLabel: mood,
-      moodScore,
-      topics,
+      summary: analysis.summary,
+      mood: analysis.mood,
+      moodLabel: analysis.mood,
+      moodScore: analysis.moodScore,
+      topics: analysis.topics,
+
+      // Advanced features
+      emotions: analysis.emotions,
+      categories: analysis.categories,
+      entities: analysis.entities,
+      sentiment: analysis.sentiment,
+
       createdAt: new Date(),
     });
 
     return NextResponse.json({
       id: docRef.id,
-      summary,
-      mood,
-      moodScore,
-      topics,
+      ...analysis,
     });
   } catch (err: any) {
     return NextResponse.json(

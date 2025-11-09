@@ -3,7 +3,7 @@ import { adminAuth, adminDb } from "@/lib/firebase/admin";
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const authHeader = req.headers.get("authorization") || "";
@@ -21,7 +21,17 @@ export async function DELETE(
     }
 
     const decoded = await adminAuth.verifyIdToken(token);
-    const { id } = params;
+
+    // Await params in Next.js 15+
+    const { id } = await params;
+
+    // Validate id
+    if (!id || typeof id !== "string" || id.trim() === "") {
+      return NextResponse.json(
+        { error: "Invalid entry ID" },
+        { status: 400 }
+      );
+    }
 
     // Get the entry to verify ownership
     const entryRef = adminDb.collection("entries").doc(id);
